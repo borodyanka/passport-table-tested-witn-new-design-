@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const admin = createClient(url, serviceKey);
 
-    // Визначаємо, чи користувач авторизований у кабінеті
+    // Визначаємо, чи користувач авторизований
     let userId: string | null = null;
     const authHeader = req.headers.get('Authorization') || '';
     const jwt = authHeader.replace(/^Bearer\s+/i, '');
@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Оберіть час прийому.' }, 400);
     }
 
-    // Перевірка зупинки прийому на обрану дату (наприклад, тривога або техперерва)
+    // Перевірка статусу прийому
     const { data: sysStatus } = await admin
       .from('system_status')
       .select('is_working, reason')
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
       return json({ error: `Прийом призупинено: ${sysStatus.reason || 'технічна перерва'}` }, 409);
     }
 
-    // Перевірка зайнятості часового слота
+    // Перевірка зайнятості часу
     if (bookingType === 'scheduled' && appointmentTime) {
       const { data: existing } = await admin
         .from('appointments')
@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Отримання наступного порядкового номера талона
+    // Отримання чергового номера талона
     const { data: maxRecord } = await admin
       .from('appointments')
       .select('queue_number')
@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
 
     const nextQueueNumber = (maxRecord?.queue_number || 0) + 1;
 
-    // Створення запису в базі без Telegram-коду
+    // Створення запису
     const { data: newAppointment, error: insertError } = await admin
       .from('appointments')
       .insert({
