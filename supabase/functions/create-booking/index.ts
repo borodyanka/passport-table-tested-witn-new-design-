@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
 
     if (insertError) throw insertError;
 
-    return json({
+  return json({
       ok: true,
       id: newAppointment.id,
       queue_number: newAppointment.queue_number,
@@ -106,6 +106,11 @@ Deno.serve(async (req) => {
       appointment_time: newAppointment.appointment_time,
       service: newAppointment.service
     });
+  } catch (e: any) {
+    console.error('create-booking error:', e);
+    return json({ error: e.message || 'Не вдалося створити запис.' }, 500);
+  }
+});
   } catch (e: any) {
     console.error('create-booking error:', e);
     return json({ error: e.message || 'Не вдалося створити запис.' }, 500);
