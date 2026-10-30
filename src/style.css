@@ -36,12 +36,25 @@ body {
   gap: 14px;
 }
 
+/* ГЕРБ З ІНТЕРАКТИВНІСТЮ ТА КУРСОРОМ */
 .crest {
   width: 62px;
   height: 62px;
   object-fit: contain;
   border-radius: 10px;
   filter: drop-shadow(0 4px 6px #12345a20);
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  user-select: none;
+}
+
+.crest:hover {
+  transform: scale(1.06);
+  filter: drop-shadow(0 6px 12px #12345a35);
+}
+
+.crest:active {
+  transform: scale(0.96);
 }
 
 .overline {
