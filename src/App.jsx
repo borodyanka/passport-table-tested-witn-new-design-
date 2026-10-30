@@ -716,7 +716,7 @@ export default function App() {
                     <Volume2 size={36} className="alert-shake" />
                     <div>
                       <h3>ВАС ВИКЛИКАНО ДО ВІКНА ПРИЙОМУ!</h3>
-                      <p>Талон <strong>№ {activeUserTicket.queue_number}</strong>. Будь ласка, негайно підійдіть до працівника паспортного столу.</p>
+                      <p>Талон <strong>№ {activeUserTicket.queue_number}</strong>. Будь ласка, підійдіть до працівника паспортного столу.</p>
                     </div>
                   </div>
                 )}
