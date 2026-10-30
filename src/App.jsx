@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { 
   CalendarDays, Clock3, ShieldCheck, ListOrdered, ArrowRight, 
-  RefreshCw, CalendarCheck, Users, LogIn, LogOut, 
+  RefreshCw, CalendarCheck, Users, LogOut, 
   AlertTriangle, Trash2, Search, Download, RotateCcw, Siren, ShieldAlert,
   User, UserCheck, Ticket, Printer, Volume2, XCircle
 } from 'lucide-react';
@@ -53,7 +53,7 @@ function playChime() {
     osc2.start(now + 0.25);
     osc2.stop(now + 1.2);
   } catch (e) {
-    console.warn('AudioContext requires interaction', e);
+    console.warn('AudioContext requires user interaction first', e);
   }
 }
 
@@ -67,27 +67,27 @@ export default function App() {
   const [staffQueue, setStaffQueue] = useState([]);
   const [staffDate, setStaffDate] = useState(kyivDate());
   
-  // Авторизація
+  // Авторизація та акаунти
   const [session, setSession] = useState(null);
   const [isStaff, setIsStaff] = useState(false);
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
+  const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ identifier: '', password: '', full_name: '', phone: '' });
 
-  // Записи користувача в кабінеті
+  // Талони в особистому кабінеті громадянина
   const [userAppointments, setUserAppointments] = useState([]);
   const [calledAlertShown, setCalledAlertShown] = useState(false);
 
-  // Кабінет працівника
+  // Кабінет працівника: пошук, фільтри, профіль
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [staffProfile, setStaffProfile] = useState({ name: 'Очеретяний Ярослав Романович', role: 'Адміністратор системи' });
 
-  // Стан роботи
+  // Стан прийому
   const [dayStatus, setDayStatus] = useState({ isWorking: true, reason: '' });
   const [statusReasonInput, setStatusReasonInput] = useState('');
   const [statusLoading, setStatusLoading] = useState(false);
 
-  // Форма створення запису без полів месенджерів
+  // Форма без полів Telegram
   const [form, setForm] = useState({ 
     full_name: '', phone: '', service: SERVICES[0], 
     visit_date: kyivDate(), booking_type: 'scheduled', 
@@ -175,7 +175,6 @@ export default function App() {
     setStaffLoading(false);
   }, [staffDate]);
 
-  // Завантаження записів поточного громадянина
   const loadUserAppointments = useCallback(async () => {
     if (!supabase || !session?.user?.id) return;
     const userPhone = session.user.user_metadata?.phone;
@@ -198,7 +197,6 @@ export default function App() {
     }
   }, [session, calledAlertShown]);
 
-  // Перевірка прав працівника
   async function checkStaffRole(userId) {
     if (!supabase) return;
     const { data } = await supabase.from('staff').select('display_name, role').eq('user_id', userId).maybeSingle();
@@ -463,7 +461,7 @@ export default function App() {
       )}
 
       <main>
-        {/* СИНІЙ БАНЕР З ВІДЖЕТОМ ТРИВОГИ */}
+        {/* ШАПКА З ВІДЖЕТОМ ТРИВОГИ */}
         <section className="hero">
           <div className="hero-text">
             <div className="hero-kicker">ЗРУЧНО · ПРОЗОРО · У ЗРУЧНИЙ ЧАС</div>
@@ -515,7 +513,7 @@ export default function App() {
           )}
         </nav>
 
-        {/* ВКЛАДКА 1: ЗАПИС НА ПРИЙОМ */}
+        {/* 1. ЗАПИС НА ПРИЙОМ */}
         {tab === 'book' && (
           <section className="panel">
             <div className="section-head">
@@ -604,7 +602,7 @@ export default function App() {
           </section>
         )}
 
-        {/* ВКЛАДКА 2: ОСОБИСТИЙ КАБІНЕТ ГРОМАДЯНИНА */}
+        {/* 2. ОСОБИСТИЙ КАБІНЕТ ГРОМАДЯНИНА */}
         {tab === 'user' && (
           <section className="panel">
             {!session ? (
@@ -676,7 +674,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* БАНЕР СПОВІЩЕННЯ ПРО ВИКЛИК */}
                 {activeUserTicket?.status === 'serving' && (
                   <div className="call-notification-banner">
                     <Volume2 size={36} className="alert-shake" />
@@ -687,7 +684,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* АКТИВНИЙ ТАЛОН */}
                 {activeUserTicket ? (
                   <div className="digital-ticket-card">
                     <div className="ticket-badge">Активний талон</div>
@@ -728,7 +724,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* ІСТОРІЯ ПОПЕРЕДНІХ ЗВЕРНЕНЬ */}
                 <h4 style={{ margin: '30px 0 15px', color: '#1e293b' }}>Історія ваших звернень</h4>
                 {userAppointments.filter(i => ['completed', 'cancelled'].includes(i.status)).length === 0 ? (
                   <p style={{ color: '#64748b', fontSize: '13px' }}>Попередніх завершених записів немає.</p>
@@ -751,7 +746,7 @@ export default function App() {
           </section>
         )}
 
-        {/* ВКЛАДКА 3: ПУБЛІЧНА ЧЕРГА */}
+        {/* 3. ПУБЛІЧНА ЧЕРГА */}
         {tab === 'queue' && (
           <section className="panel">
             <div className="section-head">
@@ -776,7 +771,7 @@ export default function App() {
           </section>
         )}
 
-        {/* ВКЛАДКА 4: КАБІНЕТ ПРАЦІВНИКА */}
+        {/* 4. КАБІНЕТ ПРАЦІВНИКА */}
         {tab === 'staff' && isStaff && (
           <section className="panel">
             <div className="section-head">
@@ -819,7 +814,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* СТАТИСТИКА ДНЯ */}
             <div className="staff-stats-grid">
               <div className="stat-card">
                 <span className="stat-label">Усього талонів</span>
@@ -839,7 +833,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* БЛОК КЕРУВАННЯ СТАТУСОМ ТА БЕЗПЕКОЮ */}
             <div style={{ background: '#f8fafc', padding: '1.25rem', border: '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                 <h4 style={{ margin: 0, color: '#334155' }}>
@@ -884,7 +877,6 @@ export default function App() {
               )}
             </div>
 
-            {/* БАР ПОШУКУ ТА ФІЛЬТРІВ */}
             <div className="staff-filter-bar">
               <div className="search-box">
                 <Search size={16} className="search-icon" />
@@ -968,7 +960,6 @@ export default function App() {
           </section>
         )}
 
-        {/* НИЖНЯ ПАНЕЛЬ: ГРАФІК ТА ОСОБИСТИЙ КАБІНЕТ */}
         <section className="info-grid">
           <article className="info-card">
             <Clock3 />
