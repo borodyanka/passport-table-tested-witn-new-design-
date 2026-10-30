@@ -87,7 +87,7 @@ export default function App() {
   const [statusReasonInput, setStatusReasonInput] = useState('');
   const [statusLoading, setStatusLoading] = useState(false);
 
-  // Форма без полів Telegram
+  // Форма запису
   const [form, setForm] = useState({ 
     full_name: '', phone: '', service: SERVICES[0], 
     visit_date: kyivDate(), booking_type: 'scheduled', 
@@ -260,8 +260,13 @@ export default function App() {
 
   async function handleAuth(e) {
     e.preventDefault();
-    setError(''); setMessage('');
-    if (!supabase) return;
+    setError(''); 
+    setMessage('');
+    
+    if (!supabase) {
+      setError('Клієнт бази даних ще не підключено. Перевірте змінні середовища репозиторію.');
+      return;
+    }
 
     let email = authForm.identifier.trim();
     if (!email.includes('@')) {
@@ -270,13 +275,15 @@ export default function App() {
     }
 
     if (authMode === 'login') {
-      const { error: err } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: err } = await supabase.auth.signInWithPassword({
         email,
         password: authForm.password
       });
-      if (err) setError('Невірний логін або пароль. Перевірте введені дані.');
-      else {
+      if (err) {
+        setError('Невірний логін або пароль. Перевірте введені дані.');
+      } else {
         setMessage('Успішний вхід!');
+        setSession(signInData.session);
         setTab('user');
       }
     } else {
@@ -284,6 +291,7 @@ export default function App() {
         setError('Вкажіть ваше повне ПІБ та коректний номер телефону.');
         return;
       }
+      
       const { data: signUpData, error: err } = await supabase.auth.signUp({
         email,
         password: authForm.password,
@@ -294,11 +302,33 @@ export default function App() {
           }
         }
       });
-      if (err) setError('Помилка реєстрації: ' + err.message);
-      else {
-        setMessage('Обліковий запис успішно створено!');
+
+      if (err) {
+        setError('Помилка реєстрації: ' + err.message);
+        return;
+      }
+
+      // Якщо сесія вже видана
+      if (signUpData?.session) {
         setSession(signUpData.session);
+        setMessage('Обліковий запис успішно створено!');
         setTab('user');
+        return;
+      }
+
+      // Спроба автоматичного входу одразу після реєстрації
+      const { data: directSignIn, error: loginErr } = await supabase.auth.signInWithPassword({
+        email,
+        password: authForm.password
+      });
+
+      if (!loginErr && directSignIn?.session) {
+        setSession(directSignIn.session);
+        setMessage('Реєстрація успішна! Вітаємо у кабінеті.');
+        setTab('user');
+      } else {
+        setAuthMode('login');
+        setMessage('Акаунт зареєстровано! Натисніть «Увійти в кабінет».');
       }
     }
   }
@@ -441,7 +471,14 @@ export default function App() {
     <div className="page">
       <header className="header">
         <div className="brand">
-          <img className="crest" src={`${basePath}gerb-borodianka.png`} alt={`Герб ${OFFICE.subtitle}`} />
+          <img 
+            className="crest" 
+            src={`${basePath}gerb-borodianka.png`} 
+            alt={`Герб ${OFFICE.subtitle}`} 
+            onClick={() => window.location.reload()}
+            title="Оновити сторінку"
+            style={{ cursor: 'pointer' }}
+          />
           <div><span className="overline">{OFFICE.subtitle}</span><h1>{OFFICE.title}</h1></div>
         </div>
         <div className="online"><span /> Онлайн-запис</div>
@@ -482,7 +519,7 @@ export default function App() {
               <a 
                 href="https://alerts.na-agency.com/region/700-borodianska-terytorialna-hromada" 
                 target="_blank" 
-                rel="noreferrer"
+                rel="noreferrer" 
                 style={{ color: '#d5e9fa', textDecoration: 'none' }}
               >
                 Повітряна тривога Бородянська громада
