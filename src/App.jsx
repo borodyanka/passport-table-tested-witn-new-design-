@@ -218,13 +218,13 @@ export default function App() {
       setSession(val);
       if (val?.user) {
         checkStaffRole(val.user.id);
-        if (val.user.user_metadata?.full_name) {
-          setForm(prev => ({
-            ...prev,
-            full_name: val.user.user_metadata.full_name || prev.full_name,
-            phone: val.user.user_metadata.phone || prev.phone
-          }));
-        }
+        const metaName = val.user.user_metadata?.full_name || val.user.user_metadata?.name || '';
+        const metaPhone = val.user.user_metadata?.phone || '';
+        setForm(prev => ({
+          ...prev,
+          full_name: metaName || prev.full_name,
+          phone: metaPhone || prev.phone
+        }));
       } else {
         setIsStaff(false);
       }
@@ -257,6 +257,23 @@ export default function App() {
       loadDayStatus(staffDate);
     }
   }, [session, isStaff, tab, staffDate, loadStaffQueue, loadDayStatus]);
+
+  async function handleGoogleLogin() {
+    if (!supabase) {
+      setError('Клієнт бази даних не налаштовано.');
+      return;
+    }
+    setError('');
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin + window.location.pathname
+      }
+    });
+    if (oauthError) {
+      setError('Помилка авторизації через Google: ' + oauthError.message);
+    }
+  }
 
   async function handleAuth(e) {
     e.preventDefault();
@@ -333,6 +350,11 @@ export default function App() {
 
   async function submitBooking(event) {
     event.preventDefault(); setError(''); setMessage(''); setReceipt(null);
+    if (!session) {
+      setError('Для створення запису необхідно увійти або зареєструватися.');
+      setTab('user');
+      return;
+    }
     if (!dayStatus.isWorking) return;
     if (form.full_name.trim().length < 3 || form.phone.trim().length < 7) { 
       setError('Вкажіть повне ПІБ та коректний номер телефону.'); 
@@ -371,12 +393,11 @@ export default function App() {
   async function cancelUserAppointment(id) {
     if (!window.confirm('Ви дійсно бажаєте скасувати цей запис? Слот стане доступним для інших громадян.')) return;
     
-    // 1. Миттєво змінюємо локальний стан у браузері, щоб талон і виклик одразу зникли
+    // Миттєве локальне оновлення
     setUserAppointments(prev => prev.map(item => item.id === id ? { ...item, status: 'cancelled' } : item));
     setMessage('Запис скасовано.');
 
     try {
-      // 2. Якщо є функція працівника і токен — скасовуємо через бекенд-функцію з адмін-правами
       if (isStaff && STAFF_ACTION_URL && session?.access_token) {
         await invoke(STAFF_ACTION_URL, { id, action: 'cancel' }, session.access_token);
       } else {
@@ -384,7 +405,6 @@ export default function App() {
         if (err) throw err;
       }
 
-      // 3. Синхронізуємо дані у фоні
       await Promise.all([
         loadUserAppointments(),
         loadPublicQueue(visitDate)
@@ -565,88 +585,103 @@ export default function App() {
         {/* 1. ЗАПИС НА ПРИЙОМ */}
         {tab === 'book' && (
           <section className="panel">
-            <div className="section-head">
-              <div className="symbol"><CalendarDays /></div>
-              <div><h3>Новий запис</h3><p>Оберіть формат прийому та заповніть поля</p></div>
-            </div>
-
-            {!dayStatus.isWorking && (
-              <div className={`status-warning-box ${isAirAlertActive ? 'alert-danger-box' : ''}`}>
-                <h4 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <AlertTriangle size={20} /> Запис на {formatDate(form.visit_date)} призупинено
-                </h4>
-                <p style={{ margin: '0' }}><strong>Причина:</strong> {dayStatus.reason}</p>
-                <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>Будь ласка, оберіть іншу дату або зачекайте на відновлення роботи кабінету.</p>
+            {!session ? (
+              <div className="empty" style={{ padding: '42px 20px', textAlign: 'center', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <UserCheck size={52} style={{ color: '#0756a5', marginBottom: '16px' }} />
+                <h3 style={{ margin: '0 0 10px', fontSize: '21px', color: '#172b44', fontWeight: 800 }}>Потрібна авторизація</h3>
+                <p style={{ maxWidth: '480px', margin: '0 auto 22px', color: '#64748b', fontSize: '14px', lineHeight: 1.6 }}>
+                  Для бронювання часу та отримання цифрового талона, будь ласка, увійдіть або зареєструйтесь в особистому кабінеті громадянина.
+                </p>
+                <button className="primary" onClick={() => setTab('user')} style={{ padding: '14px 28px', fontSize: '14px' }}>
+                  Увійти або зареєструватися <ArrowRight size={16} />
+                </button>
               </div>
-            )}
-
-            <div className="mode-switch">
-              <button disabled={!dayStatus.isWorking} className={mode === 'scheduled' ? 'active' : ''} onClick={() => { setMode('scheduled'); updateForm('booking_type', 'scheduled'); }}>
-                <CalendarCheck size={18} /> На конкретний час
-              </button>
-              <button disabled={!dayStatus.isWorking} className={mode === 'live' ? 'active' : ''} onClick={() => { setMode('live'); updateForm('booking_type', 'live'); updateForm('visit_date', kyivDate()); }}>
-                <ListOrdered size={18} /> Жива черга сьогодні
-              </button>
-            </div>
-            
-            <form onSubmit={submitBooking}>
-              <div className="form-grid">
-                <label>ПІБ повністю *
-                  <input required disabled={!dayStatus.isWorking} autoComplete="name" maxLength="150" value={form.full_name} onChange={e => updateForm('full_name', e.target.value)} placeholder="Прізвище Ім’я По батькові" />
-                </label>
-                <label>Номер телефону *
-                  <input required disabled={!dayStatus.isWorking} type="tel" autoComplete="tel" maxLength="30" value={form.phone} onChange={e => updateForm('phone', e.target.value)} placeholder="+380…" />
-                </label>
-
-                <label>Послуга *
-                  <select disabled={!dayStatus.isWorking} value={form.service} onChange={e => updateForm('service', e.target.value)}>
-                    {SERVICES.map(item => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                </label>
-                <label>Дата прийому *
-                  <input type="date" required min={kyivDate()} disabled={mode === 'live'} value={form.visit_date} onChange={e => updateForm('visit_date', e.target.value)} />
-                  {mode === 'live' && <small>Для живої черги використовується поточна дата.</small>}
-                </label>
-
-                {mode === 'scheduled' ? (
-                  <label className="slot-label">Вільний час *
-                    <select required disabled={!dayStatus.isWorking || slotsLoading || slots.length === 0} value={form.appointment_time} onChange={e => updateForm('appointment_time', e.target.value)}>
-                      <option value="">{!dayStatus.isWorking ? 'Прийом зупинено' : slotsLoading ? 'Завантажуємо години…' : slots.length ? 'Оберіть час' : 'Немає вільного часу'}</option>
-                      {dayStatus.isWorking && slots.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <small>Слот резервується на сервері; одночасне бронювання одного часу не допускається.</small>
-                  </label>
-                ) : (<div></div>)}
-
-                <label>Коментар до звернення (необов’язково)
-                  <input disabled={!dayStatus.isWorking} maxLength="300" value={form.notes} onChange={e => updateForm('notes', e.target.value)} placeholder="Коротко уточніть запит" />
-                </label>
-              </div>
-
-              <div className="privacy" style={{ marginTop: '1.25rem' }}>
-                <ShieldCheck size={18} />
-                <span>ПІБ, телефон і деталі запиту бачать лише авторизовані працівники. У відкритій черзі показуються тільки номер, час і статус.</span>
-              </div>
-
-              {error && <div className="alert error" role="alert">{error}</div>}
-              {message && <div className="alert success" role="status">{message}</div>}
-
-              <button className="primary" type="submit" disabled={!dayStatus.isWorking || busy || (mode === 'scheduled' && !slots.length)}>
-                {busy ? 'Створюємо запис…' : mode === 'live' ? 'Отримати номер живої черги' : 'Підтвердити запис'} <ArrowRight size={18} />
-              </button>
-            </form>
-            
-            {receipt && (
-              <div className="receipt">
-                <div className="receipt-icon"><CalendarCheck /></div>
-                <div>
-                  <strong>Запис створено</strong>
-                  <div className="ticket-number">№ {receipt.queue_number}</div>
-                  <p>{formatDate(receipt.visit_date)} · {receipt.booking_type === 'live' ? 'Жива черга' : (receipt.appointment_time || 'час не вказано')}</p>
-                  <p>Послуга: {receipt.service}</p>
-                  <small>Ви можете стежити за своїм талоном на вкладці «Мій кабінет» або в публічній черзі.</small>
+            ) : (
+              <>
+                <div className="section-head">
+                  <div className="symbol"><CalendarDays /></div>
+                  <div><h3>Новий запис</h3><p>Оберіть формат прийому та заповніть поля</p></div>
                 </div>
-              </div>
+
+                {!dayStatus.isWorking && (
+                  <div className={`status-warning-box ${isAirAlertActive ? 'alert-danger-box' : ''}`}>
+                    <h4 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <AlertTriangle size={20} /> Запис на {formatDate(form.visit_date)} призупинено
+                    </h4>
+                    <p style={{ margin: '0' }}><strong>Причина:</strong> {dayStatus.reason}</p>
+                    <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>Будь ласка, оберіть іншу дату або зачекайте на відновлення роботи кабінету.</p>
+                  </div>
+                )}
+
+                <div className="mode-switch">
+                  <button disabled={!dayStatus.isWorking} className={mode === 'scheduled' ? 'active' : ''} onClick={() => { setMode('scheduled'); updateForm('booking_type', 'scheduled'); }}>
+                    <CalendarCheck size={18} /> На конкретний час
+                  </button>
+                  <button disabled={!dayStatus.isWorking} className={mode === 'live' ? 'active' : ''} onClick={() => { setMode('live'); updateForm('booking_type', 'live'); updateForm('visit_date', kyivDate()); }}>
+                    <ListOrdered size={18} /> Жива черга сьогодні
+                  </button>
+                </div>
+                
+                <form onSubmit={submitBooking}>
+                  <div className="form-grid">
+                    <label>ПІБ повністю *
+                      <input required disabled={!dayStatus.isWorking} autoComplete="name" maxLength="150" value={form.full_name} onChange={e => updateForm('full_name', e.target.value)} placeholder="Прізвище Ім’я По батькові" />
+                    </label>
+                    <label>Номер телефону *
+                      <input required disabled={!dayStatus.isWorking} type="tel" autoComplete="tel" maxLength="30" value={form.phone} onChange={e => updateForm('phone', e.target.value)} placeholder="+380…" />
+                    </label>
+
+                    <label>Послуга *
+                      <select disabled={!dayStatus.isWorking} value={form.service} onChange={e => updateForm('service', e.target.value)}>
+                        {SERVICES.map(item => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                    </label>
+                    <label>Дата прийому *
+                      <input type="date" required min={kyivDate()} disabled={mode === 'live'} value={form.visit_date} onChange={e => updateForm('visit_date', e.target.value)} />
+                      {mode === 'live' && <small>Для живої черги використовується поточна дата.</small>}
+                    </label>
+
+                    {mode === 'scheduled' ? (
+                      <label className="slot-label">Вільний час *
+                        <select required disabled={!dayStatus.isWorking || slotsLoading || slots.length === 0} value={form.appointment_time} onChange={e => updateForm('appointment_time', e.target.value)}>
+                          <option value="">{!dayStatus.isWorking ? 'Прийом зупинено' : slotsLoading ? 'Завантажуємо години…' : slots.length ? 'Оберіть час' : 'Немає вільного часу'}</option>
+                          {dayStatus.isWorking && slots.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <small>Слот резервується на сервері; одночасне бронювання одного часу не допускається.</small>
+                      </label>
+                    ) : (<div></div>)}
+
+                    <label>Коментар до звернення (необов’язково)
+                      <input disabled={!dayStatus.isWorking} maxLength="300" value={form.notes} onChange={e => updateForm('notes', e.target.value)} placeholder="Коротко уточніть запит" />
+                    </label>
+                  </div>
+
+                  <div className="privacy" style={{ marginTop: '1.25rem' }}>
+                    <ShieldCheck size={18} />
+                    <span>ПІБ, телефон і деталі запиту бачать лише авторизовані працівники. У відкритій черзі показуються тільки номер, час і статус.</span>
+                  </div>
+
+                  {error && <div className="alert error" role="alert">{error}</div>}
+                  {message && <div className="alert success" role="status">{message}</div>}
+
+                  <button className="primary" type="submit" disabled={!dayStatus.isWorking || busy || (mode === 'scheduled' && !slots.length)}>
+                    {busy ? 'Створюємо запис…' : mode === 'live' ? 'Отримати номер живої черги' : 'Підтвердити запис'} <ArrowRight size={18} />
+                  </button>
+                </form>
+                
+                {receipt && (
+                  <div className="receipt">
+                    <div className="receipt-icon"><CalendarCheck /></div>
+                    <div>
+                      <strong>Запис створено</strong>
+                      <div className="ticket-number">№ {receipt.queue_number}</div>
+                      <p>{formatDate(receipt.visit_date)} · {receipt.booking_type === 'live' ? 'Жива черга' : (receipt.appointment_time || 'час не вказано')}</p>
+                      <p>Послуга: {receipt.service}</p>
+                      <small>Ви можете стежити за своїм талоном на вкладці «Мій кабінет» або в публічній черзі.</small>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
         )}
@@ -662,6 +697,25 @@ export default function App() {
                     <h3>{authMode === 'login' ? 'Вхід в особистий кабінет' : 'Реєстрація громадянина'}</h3>
                     <p>Для швидкого перегляду талонів і відстеження виклику</p>
                   </div>
+                </div>
+
+                {/* КНОПКА ШВИДКОГО ВХОДУ GOOGLE */}
+                <button 
+                  type="button" 
+                  className="google-auth-btn"
+                  onClick={handleGoogleLogin}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span>Продовжити з Google</span>
+                </button>
+
+                <div className="auth-divider">
+                  <span>або за допомогою пошти чи телефону</span>
                 </div>
 
                 <form className="login-form" onSubmit={handleAuth}>
@@ -708,8 +762,8 @@ export default function App() {
                       <UserCheck size={22} />
                     </div>
                     <div className="staff-info">
-                      <div className="staff-name">{session.user.user_metadata?.full_name || session.user.email}</div>
-                      <div className="staff-role">{session.user.user_metadata?.phone || 'Особистий кабінет'}</div>
+                      <div className="staff-name">{session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email}</div>
+                      <div className="staff-role">{session.user.user_metadata?.phone || session.user.email}</div>
                     </div>
                   </div>
 
