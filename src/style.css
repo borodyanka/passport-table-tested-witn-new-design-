@@ -513,6 +513,59 @@ small {
   justify-self: start;
 }
 
+/* КНОПКА GOOGLE AUTH ТА РОЗДІЛЬНИК */
+.google-auth-btn {
+  width: 100%;
+  max-width: 430px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid #dce4ee;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.google-auth-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+}
+
+.google-auth-btn:active {
+  transform: scale(0.99);
+}
+
+.auth-divider {
+  max-width: 430px;
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 18px 0;
+  color: #94a3b8;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.auth-divider span {
+  padding: 0 10px;
+}
+
 .staff-tools {
   display: flex;
   align-items: center;
