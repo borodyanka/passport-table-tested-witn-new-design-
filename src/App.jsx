@@ -308,7 +308,6 @@ export default function App() {
         return;
       }
 
-      // Якщо сесія вже видана
       if (signUpData?.session) {
         setSession(signUpData.session);
         setMessage('Обліковий запис успішно створено!');
@@ -316,7 +315,6 @@ export default function App() {
         return;
       }
 
-      // Спроба автоматичного входу одразу після реєстрації
       const { data: directSignIn, error: loginErr } = await supabase.auth.signInWithPassword({
         email,
         password: authForm.password
@@ -372,14 +370,28 @@ export default function App() {
 
   async function cancelUserAppointment(id) {
     if (!window.confirm('Ви дійсно бажаєте скасувати цей запис? Слот стане доступним для інших громадян.')) return;
+    
+    // 1. Миттєво змінюємо локальний стан у браузері, щоб талон і виклик одразу зникли
+    setUserAppointments(prev => prev.map(item => item.id === id ? { ...item, status: 'cancelled' } : item));
+    setMessage('Запис скасовано.');
+
     try {
-      const { error: err } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
-      if (err) throw err;
-      setMessage('Запис скасовано.');
-      await loadUserAppointments();
-      await loadPublicQueue(visitDate);
+      // 2. Якщо є функція працівника і токен — скасовуємо через бекенд-функцію з адмін-правами
+      if (isStaff && STAFF_ACTION_URL && session?.access_token) {
+        await invoke(STAFF_ACTION_URL, { id, action: 'cancel' }, session.access_token);
+      } else {
+        const { error: err } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
+        if (err) throw err;
+      }
+
+      // 3. Синхронізуємо дані у фоні
+      await Promise.all([
+        loadUserAppointments(),
+        loadPublicQueue(visitDate)
+      ]);
     } catch (e) {
-      setError('Не вдалося скасувати: ' + e.message);
+      await loadUserAppointments();
+      setError('Не вдалося скасувати на сервері: ' + e.message);
     }
   }
 
