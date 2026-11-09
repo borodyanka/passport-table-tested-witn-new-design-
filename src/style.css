@@ -1088,3 +1088,155 @@ footer {
   .status { font-size: 9px; padding: 6px 8px; }
   footer { flex-direction: column; gap: 4px; }
 }
+
+/* ============================================================
+   ОКРЕМИЙ ЕКРАН ВХОДУ /host У СТИЛІ WORDPRESS
+   ============================================================ */
+.host-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f1;
+  padding: 24px;
+}
+
+.host-login-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.host-brand {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.host-crest {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.15));
+}
+
+.host-form {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #c3c4c7;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 26px 24px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.host-form label {
+  font-size: 13px;
+  color: #3c434a;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.host-form input[type="text"],
+.host-form input[type="password"] {
+  border: 1px solid #8c8f94;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 15px;
+  color: #2c3338;
+}
+
+.host-form input[type="text"]:focus,
+.host-form input[type="password"]:focus {
+  border-color: #2271b1;
+  box-shadow: 0 0 0 1px #2271b1;
+  outline: 2px solid transparent;
+}
+
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  width: 100%;
+  padding-right: 38px !important;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #2271b1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.host-form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.remember-me {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  font-size: 12px !important;
+  color: #646970 !important;
+  cursor: pointer;
+}
+
+.remember-me input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.host-btn-primary {
+  background: #2271b1;
+  border: 1px solid #2271b1;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.host-btn-primary:hover {
+  background: #135e96;
+  border-color: #135e96;
+}
+
+.host-footer-links {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.host-footer-links button {
+  background: none;
+  border: none;
+  color: #2271b1;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.host-footer-links button:hover {
+  color: #135e96;
+  text-decoration: underline;
+}
