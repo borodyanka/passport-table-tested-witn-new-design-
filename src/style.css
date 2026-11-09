@@ -210,39 +210,6 @@ body {
   margin-left: auto;
 }
 
-.mode-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 22px;
-  background: #f3f6fb;
-  padding: 5px;
-  border-radius: 12px;
-}
-
-.mode-switch button {
-  border: 1px solid transparent;
-  border-radius: 9px;
-  padding: 12px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 9px;
-  background: transparent;
-  color: #60738b;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.mode-switch button.active {
-  background: white;
-  border-color: #e2eaf3;
-  color: #0756a5;
-  box-shadow: 0 3px 10px #12345a0a;
-}
-
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1108,7 +1075,6 @@ footer {
   .full-width { grid-column: auto; }
   .tabs { gap: 3px; }
   .tabs button { padding: 10px; font-size: 11px; }
-  .mode-switch button { font-size: 10px; padding: 10px 5px; }
   .section-head h3 { font-size: 17px; }
   .section-head p { font-size: 11px; }
   .section-head { align-items: flex-start; }
