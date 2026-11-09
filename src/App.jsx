@@ -59,7 +59,6 @@ function playChime() {
 
 export default function App() {
   const [tab, setTab] = useState('book');
-  const [mode, setMode] = useState('scheduled');
   const [visitDate, setVisitDate] = useState(kyivDate());
   const [slots, setSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -163,14 +162,14 @@ export default function App() {
 
   const loadPublicQueue = useCallback(async (date = visitDate) => {
     if (!supabase) return;
-    const { data, error: queryError } = await supabase.from('public_queue').select('queue_number,visit_date,status,booking_type,appointment_time,created_at').eq('visit_date', date).order('queue_number', { ascending: true });
+    const { data, error: queryError } = await supabase.from('public_queue').select('queue_number,visit_date,status,booking_type,appointment_time,created_at').eq('visit_date', date).order('appointment_time', { ascending: true });
     if (queryError) setError(queryError.message); else setPublicQueue(data || []);
   }, [visitDate]);
 
   const loadStaffQueue = useCallback(async (date = staffDate) => {
     if (!supabase) return;
     setStaffLoading(true);
-    const { data, error: queryError } = await supabase.from('appointments').select('id,queue_number,full_name,phone,service,visit_date,booking_type,appointment_time,notes,status,created_at').eq('visit_date', date).order('queue_number', { ascending: true });
+    const { data, error: queryError } = await supabase.from('appointments').select('id,queue_number,full_name,phone,service,visit_date,booking_type,appointment_time,notes,status,created_at').eq('visit_date', date).order('appointment_time', { ascending: true });
     if (queryError) setError(queryError.message); else setStaffQueue(data || []);
     setStaffLoading(false);
   }, [staffDate]);
@@ -178,7 +177,7 @@ export default function App() {
   const loadUserAppointments = useCallback(async () => {
     if (!supabase || !session?.user?.id) return;
     const userPhone = session.user.user_metadata?.phone;
-    let query = supabase.from('appointments').select('*').order('visit_date', { ascending: false }).order('queue_number', { ascending: true });
+    let query = supabase.from('appointments').select('*').order('visit_date', { ascending: false }).order('appointment_time', { ascending: true });
     
     if (userPhone) {
       query = query.or(`user_id.eq.${session.user.id},phone.eq.${userPhone}`);
@@ -241,9 +240,9 @@ export default function App() {
   }, [session, tab, loadUserAppointments]);
 
   useEffect(() => { 
-    if (mode === 'scheduled') loadSlots(form.visit_date); 
+    loadSlots(form.visit_date); 
     loadDayStatus(form.visit_date);
-  }, [mode, form.visit_date, loadSlots, loadDayStatus]);
+  }, [form.visit_date, loadSlots, loadDayStatus]);
 
   useEffect(() => { 
     loadPublicQueue(); 
@@ -360,7 +359,7 @@ export default function App() {
       setError('Вкажіть повне ПІБ та коректний номер телефону.'); 
       return; 
     }
-    if (form.booking_type === 'scheduled' && !form.appointment_time) { 
+    if (!form.appointment_time) { 
       setError('Оберіть вільний час прийому.'); 
       return; 
     }
@@ -369,9 +368,9 @@ export default function App() {
     try {
       const payload = await invoke(CREATE_URL, { 
         ...form, 
-        booking_type: mode, 
+        booking_type: 'scheduled', 
         visit_date: form.visit_date, 
-        appointment_time: mode === 'scheduled' ? form.appointment_time : null
+        appointment_time: form.appointment_time
       }, session?.access_token || SUPABASE_KEY);
 
       setReceipt(payload);
@@ -379,9 +378,6 @@ export default function App() {
       await loadPublicQueue(form.visit_date);
       if (session) {
         await loadUserAppointments();
-      }
-      if (mode === 'live') {
-        setForm(old => ({ ...old, notes: '' }));
       }
     } catch (e) { 
       setError(e.message || 'Не вдалося створити запис.'); 
@@ -393,7 +389,6 @@ export default function App() {
   async function cancelUserAppointment(id) {
     if (!window.confirm('Ви дійсно бажаєте скасувати цей запис? Слот стане доступним для інших громадян.')) return;
     
-    // Миттєве локальне оновлення
     setUserAppointments(prev => prev.map(item => item.id === id ? { ...item, status: 'cancelled' } : item));
     setMessage('Запис скасовано.');
 
@@ -449,13 +444,12 @@ export default function App() {
       alert('Немає записів для експорту на цю дату.');
       return;
     }
-    const headers = ['Номер', 'ПІБ', 'Телефон', 'Послуга', 'Формат', 'Час', 'Статус', 'Коментар', 'Дата запису'];
+    const headers = ['Номер', 'ПІБ', 'Телефон', 'Послуга', 'Час', 'Статус', 'Коментар', 'Дата запису'];
     const rows = staffQueue.map(item => [
       item.queue_number,
       `"${item.full_name || ''}"`,
       `"${item.phone || ''}"`,
       `"${item.service || ''}"`,
-      item.booking_type === 'live' ? 'Жива черга' : 'Попередній запис',
       item.appointment_time ? item.appointment_time.slice(0, 5) : '—',
       STATUS_LABELS[item.status] || item.status,
       `"${(item.notes || '').replace(/"/g, '""')}"`,
@@ -494,7 +488,7 @@ export default function App() {
   }, [staffQueue, statusFilter, searchQuery]);
 
   const filteredQueue = useMemo(() => publicQueue.filter(item => item.status !== 'cancelled'), [publicQueue]);
-  const displayTime = (item) => item.booking_type === 'live' ? 'Жива черга' : (item.appointment_time ? item.appointment_time.slice(0, 5) : 'Час не вказано');
+  const displayTime = (item) => item.appointment_time ? item.appointment_time.slice(0, 5) : 'Час не вказано';
 
   const isAirAlertActive = !dayStatus.isWorking && dayStatus.reason?.toLowerCase().includes('тривог');
   const activeUserTicket = userAppointments.find(i => ['waiting', 'serving'].includes(i.status));
@@ -535,7 +529,7 @@ export default function App() {
           <div className="hero-text">
             <div className="hero-kicker">ЗРУЧНО · ПРОЗОРО · У ЗРУЧНИЙ ЧАС</div>
             <h2>Запишіться на прийом<br />у кілька кроків</h2>
-            <p>Оберіть послугу, дату та доступний час або скористайтеся живою чергою. Особистий кабінет дозволить стежити за викликом прямо на сайті.</p>
+            <p>Оберіть послугу, зручну дату та доступний час прийому. Особистий кабінет дозволить стежити за викликом прямо на сайті.</p>
           </div>
           
           <div className="hero-widget-box">
@@ -600,7 +594,7 @@ export default function App() {
               <>
                 <div className="section-head">
                   <div className="symbol"><CalendarDays /></div>
-                  <div><h3>Новий запис</h3><p>Оберіть формат прийому та заповніть поля</p></div>
+                  <div><h3>Новий запис</h3><p>Оберіть послугу, дату та зручний час прийому</p></div>
                 </div>
 
                 {!dayStatus.isWorking && (
@@ -612,15 +606,6 @@ export default function App() {
                     <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>Будь ласка, оберіть іншу дату або зачекайте на відновлення роботи кабінету.</p>
                   </div>
                 )}
-
-                <div className="mode-switch">
-                  <button disabled={!dayStatus.isWorking} className={mode === 'scheduled' ? 'active' : ''} onClick={() => { setMode('scheduled'); updateForm('booking_type', 'scheduled'); }}>
-                    <CalendarCheck size={18} /> На конкретний час
-                  </button>
-                  <button disabled={!dayStatus.isWorking} className={mode === 'live' ? 'active' : ''} onClick={() => { setMode('live'); updateForm('booking_type', 'live'); updateForm('visit_date', kyivDate()); }}>
-                    <ListOrdered size={18} /> Жива черга сьогодні
-                  </button>
-                </div>
                 
                 <form onSubmit={submitBooking}>
                   <div className="form-grid">
@@ -637,19 +622,16 @@ export default function App() {
                       </select>
                     </label>
                     <label>Дата прийому *
-                      <input type="date" required min={kyivDate()} disabled={mode === 'live'} value={form.visit_date} onChange={e => updateForm('visit_date', e.target.value)} />
-                      {mode === 'live' && <small>Для живої черги використовується поточна дата.</small>}
+                      <input type="date" required min={kyivDate()} value={form.visit_date} onChange={e => updateForm('visit_date', e.target.value)} />
                     </label>
 
-                    {mode === 'scheduled' ? (
-                      <label className="slot-label">Вільний час *
-                        <select required disabled={!dayStatus.isWorking || slotsLoading || slots.length === 0} value={form.appointment_time} onChange={e => updateForm('appointment_time', e.target.value)}>
-                          <option value="">{!dayStatus.isWorking ? 'Прийом зупинено' : slotsLoading ? 'Завантажуємо години…' : slots.length ? 'Оберіть час' : 'Немає вільного часу'}</option>
-                          {dayStatus.isWorking && slots.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                        <small>Слот резервується на сервері; одночасне бронювання одного часу не допускається.</small>
-                      </label>
-                    ) : (<div></div>)}
+                    <label className="slot-label">Вільний час *
+                      <select required disabled={!dayStatus.isWorking || slotsLoading || slots.length === 0} value={form.appointment_time} onChange={e => updateForm('appointment_time', e.target.value)}>
+                        <option value="">{!dayStatus.isWorking ? 'Прийом зупинено' : slotsLoading ? 'Завантажуємо години…' : slots.length ? 'Оберіть час' : 'Немає вільного часу'}</option>
+                        {dayStatus.isWorking && slots.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <small>Слот резервується на сервері; одночасне бронювання одного часу не допускається.</small>
+                    </label>
 
                     <label>Коментар до звернення (необов’язково)
                       <input disabled={!dayStatus.isWorking} maxLength="300" value={form.notes} onChange={e => updateForm('notes', e.target.value)} placeholder="Коротко уточніть запит" />
@@ -664,8 +646,8 @@ export default function App() {
                   {error && <div className="alert error" role="alert">{error}</div>}
                   {message && <div className="alert success" role="status">{message}</div>}
 
-                  <button className="primary" type="submit" disabled={!dayStatus.isWorking || busy || (mode === 'scheduled' && !slots.length)}>
-                    {busy ? 'Створюємо запис…' : mode === 'live' ? 'Отримати номер живої черги' : 'Підтвердити запис'} <ArrowRight size={18} />
+                  <button className="primary" type="submit" disabled={!dayStatus.isWorking || busy || !slots.length}>
+                    {busy ? 'Створюємо запис…' : 'Підтвердити запис'} <ArrowRight size={18} />
                   </button>
                 </form>
                 
@@ -675,7 +657,7 @@ export default function App() {
                     <div>
                       <strong>Запис створено</strong>
                       <div className="ticket-number">№ {receipt.queue_number}</div>
-                      <p>{formatDate(receipt.visit_date)} · {receipt.booking_type === 'live' ? 'Жива черга' : (receipt.appointment_time || 'час не вказано')}</p>
+                      <p>{formatDate(receipt.visit_date)} · {receipt.appointment_time || 'час не вказано'}</p>
                       <p>Послуга: {receipt.service}</p>
                       <small>Ви можете стежити за своїм талоном на вкладці «Мій кабінет» або в публічній черзі.</small>
                     </div>
@@ -802,7 +784,7 @@ export default function App() {
                       </div>
                       <div>
                         <label>Час візиту</label>
-                        <span>{activeUserTicket.booking_type === 'live' ? 'Жива черга' : activeUserTicket.appointment_time?.slice(0, 5)}</span>
+                        <span>{activeUserTicket.appointment_time?.slice(0, 5) || '—'}</span>
                       </div>
                       <div className="full-width">
                         <label>Послуга</label>
@@ -865,7 +847,7 @@ export default function App() {
                 filteredQueue.map(item => (
                   <div className="queue-row" key={`${item.visit_date}-${item.queue_number}`}>
                     <div className="queue-number">№ {item.queue_number}</div>
-                    <div className="queue-main"><b>{displayTime(item)}</b><small>{item.booking_type === 'live' ? 'Жива черга' : 'Попередній запис'}</small></div>
+                    <div className="queue-main"><b>{displayTime(item)}</b><small>Попередній запис</small></div>
                     <span className={`status ${item.status}`}>{STATUS_LABELS[item.status] || item.status}</span>
                   </div>
                 ))
@@ -1032,7 +1014,7 @@ export default function App() {
                         <b>№ {item.queue_number} · {item.full_name}</b>
                         <span className={`status ${item.status}`}>{STATUS_LABELS[item.status] || item.status}</span>
                       </div>
-                      <p><strong>{item.service}</strong> · {item.booking_type === 'live' ? 'Жива черга' : `Час ${String(item.appointment_time || '').slice(0, 5)}`}</p>
+                      <p><strong>{item.service}</strong> · Час: {String(item.appointment_time || '').slice(0, 5)}</p>
                       <p>Телефон: <a href={`tel:${item.phone}`}>{item.phone}</a></p>
                       {item.notes && <p>Коментар: {item.notes}</p>}
                       <small>Створено: {new Date(item.created_at).toLocaleString('uk-UA')}</small>
