@@ -4,7 +4,7 @@ import {
   CalendarDays, Clock3, ShieldCheck, ListOrdered, ArrowRight, 
   RefreshCw, CalendarCheck, Users, LogOut, 
   AlertTriangle, Trash2, Search, Download, RotateCcw, Siren, ShieldAlert,
-  User, UserCheck, Ticket, Printer, Volume2, XCircle
+  User, UserCheck, Ticket, Printer, Volume2, XCircle, Lock, Eye, EyeOff
 } from 'lucide-react';
 import { SERVICES, OFFICE, STATUS_LABELS } from './config.js';
 
@@ -59,6 +59,9 @@ function playChime() {
 
 export default function App() {
   const [tab, setTab] = useState('book');
+  const [isHostRoute, setIsHostRoute] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
   const [visitDate, setVisitDate] = useState(kyivDate());
   const [slots, setSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -66,17 +69,18 @@ export default function App() {
   const [staffQueue, setStaffQueue] = useState([]);
   const [staffDate, setStaffDate] = useState(kyivDate());
   
-  // Авторизація та акаунти
+  // Авторизація
   const [session, setSession] = useState(null);
   const [isStaff, setIsStaff] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ identifier: '', password: '', full_name: '', phone: '' });
+  const [staffLoginForm, setStaffLoginForm] = useState({ identifier: '', password: '' });
 
-  // Талони в особистому кабінеті громадянина
+  // Талони громадянина
   const [userAppointments, setUserAppointments] = useState([]);
   const [calledAlertShown, setCalledAlertShown] = useState(false);
 
-  // Кабінет працівника: пошук, фільтри, профіль
+  // Кабінет працівника
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [staffProfile, setStaffProfile] = useState({ name: 'Очеретяний Ярослав Романович', role: 'Адміністратор системи' });
@@ -100,6 +104,36 @@ export default function App() {
 
   const basePath = import.meta.env.BASE_URL;
   const updateForm = (key, value) => setForm(old => ({ ...old, [key]: value }));
+
+  // Маршрутизація для /host або #/host
+  const checkRoute = useCallback(() => {
+    const path = window.location.pathname;
+    const hash = window.location.hash;
+    if (path.endsWith('/host') || path.endsWith('/host/') || hash === '#/host' || hash === '#host') {
+      setIsHostRoute(true);
+      setTab('staff');
+    } else {
+      setIsHostRoute(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkRoute();
+    window.addEventListener('popstate', checkRoute);
+    window.addEventListener('hashchange', checkRoute);
+    return () => {
+      window.removeEventListener('popstate', checkRoute);
+      window.removeEventListener('hashchange', checkRoute);
+    };
+  }, [checkRoute]);
+
+  const goToHome = () => {
+    window.location.hash = '';
+    setIsHostRoute(false);
+    setTab('book');
+    setError('');
+    setMessage('');
+  };
 
   const invoke = useCallback(async (url, body, token = SUPABASE_KEY) => {
     if (!url) throw new Error('Не налаштовано адресу серверної функції.');
@@ -197,13 +231,15 @@ export default function App() {
   }, [session, calledAlertShown]);
 
   async function checkStaffRole(userId) {
-    if (!supabase) return;
+    if (!supabase) return false;
     const { data } = await supabase.from('staff').select('display_name, role').eq('user_id', userId).maybeSingle();
     if (data) {
       setIsStaff(true);
       setStaffProfile({ name: data.display_name, role: data.role || 'Працівник' });
+      return true;
     } else {
       setIsStaff(false);
+      return false;
     }
   }
 
@@ -232,57 +268,49 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (session && tab === 'user') {
+    if (session && tab === 'user' && !isHostRoute) {
       loadUserAppointments();
       const interval = setInterval(loadUserAppointments, 15000);
       return () => clearInterval(interval);
     }
-  }, [session, tab, loadUserAppointments]);
+  }, [session, tab, isHostRoute, loadUserAppointments]);
 
   useEffect(() => { 
-    loadSlots(form.visit_date); 
-    loadDayStatus(form.visit_date);
-  }, [form.visit_date, loadSlots, loadDayStatus]);
+    if (!isHostRoute) {
+      loadSlots(form.visit_date); 
+      loadDayStatus(form.visit_date);
+    }
+  }, [form.visit_date, isHostRoute, loadSlots, loadDayStatus]);
 
   useEffect(() => { 
-    loadPublicQueue(); 
-    const timer = setInterval(() => loadPublicQueue(), 20000); 
-    return () => clearInterval(timer); 
-  }, [loadPublicQueue]);
+    if (!isHostRoute) {
+      loadPublicQueue(); 
+      const timer = setInterval(() => loadPublicQueue(), 20000); 
+      return () => clearInterval(timer); 
+    }
+  }, [isHostRoute, loadPublicQueue]);
 
   useEffect(() => { 
-    if (session && isStaff && tab === 'staff') {
+    if (session && isStaff && (tab === 'staff' || isHostRoute)) {
       loadStaffQueue();
       loadDayStatus(staffDate);
     }
-  }, [session, isStaff, tab, staffDate, loadStaffQueue, loadDayStatus]);
+  }, [session, isStaff, tab, isHostRoute, staffDate, loadStaffQueue, loadDayStatus]);
 
   async function handleGoogleLogin() {
-    if (!supabase) {
-      setError('Клієнт бази даних не налаштовано.');
-      return;
-    }
+    if (!supabase) { setError('Клієнт бази даних не налаштовано.'); return; }
     setError('');
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: window.location.origin + window.location.pathname
-      }
+      options: { redirectTo: window.location.origin + window.location.pathname }
     });
-    if (oauthError) {
-      setError('Помилка авторизації через Google: ' + oauthError.message);
-    }
+    if (oauthError) setError('Помилка авторизації: ' + oauthError.message);
   }
 
   async function handleAuth(e) {
     e.preventDefault();
-    setError(''); 
-    setMessage('');
-    
-    if (!supabase) {
-      setError('Клієнт бази даних ще не підключено. Перевірте змінні середовища репозиторію.');
-      return;
-    }
+    setError(''); setMessage('');
+    if (!supabase) return setError('Клієнт бази даних не підключено.');
 
     let email = authForm.identifier.trim();
     if (!email.includes('@')) {
@@ -292,58 +320,66 @@ export default function App() {
 
     if (authMode === 'login') {
       const { data: signInData, error: err } = await supabase.auth.signInWithPassword({
-        email,
-        password: authForm.password
+        email, password: authForm.password
       });
-      if (err) {
-        setError('Невірний логін або пароль. Перевірте введені дані.');
-      } else {
+      if (err) setError('Невірний логін або пароль.');
+      else {
         setMessage('Успішний вхід!');
         setSession(signInData.session);
         setTab('user');
       }
     } else {
       if (authForm.full_name.trim().length < 3 || authForm.phone.trim().length < 7) {
-        setError('Вкажіть ваше повне ПІБ та коректний номер телефону.');
-        return;
+        return setError('Вкажіть повне ПІБ та телефон.');
       }
-      
       const { data: signUpData, error: err } = await supabase.auth.signUp({
-        email,
-        password: authForm.password,
-        options: {
-          data: {
-            full_name: authForm.full_name.trim(),
-            phone: authForm.phone.trim()
-          }
-        }
+        email, password: authForm.password,
+        options: { data: { full_name: authForm.full_name.trim(), phone: authForm.phone.trim() } }
       });
-
-      if (err) {
-        setError('Помилка реєстрації: ' + err.message);
-        return;
-      }
-
+      if (err) return setError('Помилка реєстрації: ' + err.message);
       if (signUpData?.session) {
         setSession(signUpData.session);
-        setMessage('Обліковий запис успішно створено!');
-        setTab('user');
-        return;
-      }
-
-      const { data: directSignIn, error: loginErr } = await supabase.auth.signInWithPassword({
-        email,
-        password: authForm.password
-      });
-
-      if (!loginErr && directSignIn?.session) {
-        setSession(directSignIn.session);
-        setMessage('Реєстрація успішна! Вітаємо у кабінеті.');
         setTab('user');
       } else {
         setAuthMode('login');
-        setMessage('Акаунт зареєстровано! Натисніть «Увійти в кабінет».');
+        setMessage('Акаунт зареєстровано! Увійдіть.');
       }
+    }
+  }
+
+  // Окремий вхід для працівника через /host
+  async function handleStaffLogin(e) {
+    e.preventDefault();
+    setError(''); setMessage('');
+    if (!supabase) return setError('База даних не підключена.');
+
+    let email = staffLoginForm.identifier.trim();
+    if (!email.includes('@')) {
+      const cleanPhone = email.replace(/[^\d+]/g, '');
+      email = `${cleanPhone}@queue.local`;
+    }
+
+    const { data, error: loginErr } = await supabase.auth.signInWithPassword({
+      email,
+      password: staffLoginForm.password
+    });
+
+    if (loginErr) {
+      setError('Невірний логін або пароль адміністратора.');
+      return;
+    }
+
+    if (data?.session?.user) {
+      const hasStaffRole = await checkStaffRole(data.session.user.id);
+      if (!hasStaffRole) {
+        await supabase.auth.signOut();
+        setSession(null);
+        setIsStaff(false);
+        setError('Доступ заборонено: цей обліковий запис не має прав працівника.');
+        return;
+      }
+      setSession(data.session);
+      setMessage('Вхід виконано успішно.');
     }
   }
 
@@ -356,19 +392,16 @@ export default function App() {
     }
     if (!dayStatus.isWorking) return;
     if (form.full_name.trim().length < 3 || form.phone.trim().length < 7) { 
-      setError('Вкажіть повне ПІБ та коректний номер телефону.'); 
-      return; 
+      return setError('Вкажіть повне ПІБ та коректний номер телефону.'); 
     }
     if (!form.appointment_time) { 
-      setError('Оберіть вільний час прийому.'); 
-      return; 
+      return setError('Оберіть вільний час прийому.'); 
     }
     
     setBusy(true);
     try {
       const payload = await invoke(CREATE_URL, { 
-        ...form, 
-        booking_type: 'scheduled', 
+        ...form, booking_type: 'scheduled', 
         visit_date: form.visit_date, 
         appointment_time: form.appointment_time
       }, session?.access_token || SUPABASE_KEY);
@@ -376,9 +409,7 @@ export default function App() {
       setReceipt(payload);
       setMessage('Талон успішно створено!');
       await loadPublicQueue(form.visit_date);
-      if (session) {
-        await loadUserAppointments();
-      }
+      if (session) await loadUserAppointments();
     } catch (e) { 
       setError(e.message || 'Не вдалося створити запис.'); 
     } finally { 
@@ -387,11 +418,8 @@ export default function App() {
   }
 
   async function cancelUserAppointment(id) {
-    if (!window.confirm('Ви дійсно бажаєте скасувати цей запис? Слот стане доступним для інших громадян.')) return;
-    
+    if (!window.confirm('Ви дійсно бажаєте скасувати цей запис?')) return;
     setUserAppointments(prev => prev.map(item => item.id === id ? { ...item, status: 'cancelled' } : item));
-    setMessage('Запис скасовано.');
-
     try {
       if (isStaff && STAFF_ACTION_URL && session?.access_token) {
         await invoke(STAFF_ACTION_URL, { id, action: 'cancel' }, session.access_token);
@@ -399,14 +427,10 @@ export default function App() {
         const { error: err } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
         if (err) throw err;
       }
-
-      await Promise.all([
-        loadUserAppointments(),
-        loadPublicQueue(visitDate)
-      ]);
+      await Promise.all([loadUserAppointments(), loadPublicQueue(visitDate)]);
     } catch (e) {
       await loadUserAppointments();
-      setError('Не вдалося скасувати на сервері: ' + e.message);
+      setError('Помилка: ' + e.message);
     }
   }
 
@@ -422,40 +446,30 @@ export default function App() {
     if (!session?.access_token) return;
     try {
       const result = await invoke(STAFF_ACTION_URL, { id, action }, session.access_token);
-      setMessage(result.message || (action === 'restore' ? 'Запис відновлено в чергу.' : 'Статус оновлено.'));
+      setMessage(result.message || 'Статус оновлено.');
       await Promise.all([loadStaffQueue(staffDate), loadPublicQueue(staffDate)]);
     } catch (e) { setError(e.message); }
   }
 
   async function deleteAppointment(id) {
-    if (!window.confirm('Ви впевнені, що хочете безповоротно видалити цей запис із бази?')) return;
+    if (!window.confirm('Ви впевнені, що хочете видалити цей запис?')) return;
     try {
       const { error: delError } = await supabase.from('appointments').delete().eq('id', id);
       if (delError) throw delError;
-      setMessage('Запис успішно видалено.');
+      setMessage('Запис видалено.');
       await Promise.all([loadStaffQueue(staffDate), loadPublicQueue(staffDate)]);
-    } catch (e) {
-      setError('Не вдалося видалити запис: ' + e.message);
-    }
+    } catch (e) { setError('Помилка: ' + e.message); }
   }
 
   const exportToCSV = () => {
-    if (staffQueue.length === 0) {
-      alert('Немає записів для експорту на цю дату.');
-      return;
-    }
+    if (staffQueue.length === 0) return alert('Немає записів для експорту.');
     const headers = ['Номер', 'ПІБ', 'Телефон', 'Послуга', 'Час', 'Статус', 'Коментар', 'Дата запису'];
     const rows = staffQueue.map(item => [
-      item.queue_number,
-      `"${item.full_name || ''}"`,
-      `"${item.phone || ''}"`,
-      `"${item.service || ''}"`,
+      item.queue_number, `"${item.full_name || ''}"`, `"${item.phone || ''}"`, `"${item.service || ''}"`,
       item.appointment_time ? item.appointment_time.slice(0, 5) : '—',
-      STATUS_LABELS[item.status] || item.status,
-      `"${(item.notes || '').replace(/"/g, '""')}"`,
+      STATUS_LABELS[item.status] || item.status, `"${(item.notes || '').replace(/"/g, '""')}"`,
       new Date(item.created_at).toLocaleString('uk-UA')
     ]);
-
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -489,10 +503,194 @@ export default function App() {
 
   const filteredQueue = useMemo(() => publicQueue.filter(item => item.status !== 'cancelled'), [publicQueue]);
   const displayTime = (item) => item.appointment_time ? item.appointment_time.slice(0, 5) : 'Час не вказано';
-
   const isAirAlertActive = !dayStatus.isWorking && dayStatus.reason?.toLowerCase().includes('тривог');
   const activeUserTicket = userAppointments.find(i => ['waiting', 'serving'].includes(i.status));
 
+  // ЯКЩО ВІДКРИТО /host
+  if (isHostRoute) {
+    if (!session || !isStaff) {
+      return (
+        <div className="host-login-page">
+          <div className="host-login-card">
+            <div className="host-brand">
+              <img src={`${basePath}gerb-borodianka.png`} alt="Герб Бородянки" className="host-crest" />
+            </div>
+
+            <form onSubmit={handleStaffLogin} className="host-form">
+              <label>
+                Ім’я користувача або Email адреса
+                <input 
+                  type="text" 
+                  required 
+                  autoFocus
+                  value={staffLoginForm.identifier} 
+                  onChange={e => setStaffLoginForm(p => ({ ...p, identifier: e.target.value }))} 
+                />
+              </label>
+
+              <label>
+                Пароль
+                <div className="password-input-wrapper">
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    required 
+                    value={staffLoginForm.password} 
+                    onChange={e => setStaffLoginForm(p => ({ ...p, password: e.target.value }))} 
+                  />
+                  <button 
+                    type="button" 
+                    className="toggle-password" 
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex="-1"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </label>
+
+              <div className="host-form-actions">
+                <label className="remember-me">
+                  <input type="checkbox" defaultChecked /> Запам'ятати мене
+                </label>
+                <button type="submit" className="host-btn-primary">Увійти</button>
+              </div>
+
+              {error && <div className="alert error" style={{ marginTop: '14px' }}>{error}</div>}
+              {message && <div className="alert success" style={{ marginTop: '14px' }}>{message}</div>}
+            </form>
+
+            <div className="host-footer-links">
+              <button type="button" onClick={goToHome}>← Назад до електронної черги</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Авторизований працівник у /host
+    return (
+      <div className="page">
+        <header className="header">
+          <div className="brand">
+            <img className="crest" src={`${basePath}gerb-borodianka.png`} alt="Герб" onClick={goToHome} style={{ cursor: 'pointer' }} />
+            <div><span className="overline">{OFFICE.subtitle}</span><h1>Кабінет адміністратора</h1></div>
+          </div>
+          <button className="quiet-button" onClick={goToHome}>
+            ← На публічний сайт
+          </button>
+        </header>
+
+        <main>
+          <section className="panel" style={{ marginTop: '20px' }}>
+            <div className="staff-tools" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' }}>
+              <div className="staff-profile-card">
+                <div className="staff-avatar">
+                  {staffProfile.name ? staffProfile.name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase() : 'ЯО'}
+                </div>
+                <div className="staff-info">
+                  <div className="staff-name">{staffProfile.name}</div>
+                  <div className="staff-role"><span className="staff-status-dot"></span>{staffProfile.role}</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <label style={{ margin: 0, minWidth: '150px' }}>
+                  <input type="date" value={staffDate} onChange={e => { setStaffDate(e.target.value); loadStaffQueue(e.target.value); loadDayStatus(e.target.value); }} style={{ padding: '8px 12px' }} />
+                </label>
+                <button className="icon-button" onClick={() => { loadStaffQueue(staffDate); loadDayStatus(staffDate); }}><RefreshCw size={15} /> Оновити</button>
+                <button className="icon-button" onClick={exportToCSV}><Download size={15} /> Експорт (Excel)</button>
+                <button className="quiet-button" onClick={handleSignOut}><LogOut size={15} /> Вийти</button>
+              </div>
+            </div>
+
+            <div className="staff-stats-grid">
+              <div className="stat-card"><span className="stat-label">Усього</span><strong className="stat-value">{stats.total}</strong></div>
+              <div className="stat-card stat-waiting"><span className="stat-label">Очікують</span><strong className="stat-value">{stats.waiting}</strong></div>
+              <div className="stat-card stat-serving"><span className="stat-label">На прийомі</span><strong className="stat-value">{stats.serving}</strong></div>
+              <div className="stat-card stat-completed"><span className="stat-label">Обслуговано</span><strong className="stat-value">{stats.completed}</strong></div>
+            </div>
+
+            <div style={{ background: '#f8fafc', padding: '1.25rem', border: '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                <h4 style={{ margin: 0, color: '#334155' }}>Статус прийому на {formatDate(staffDate)}</h4>
+                {dayStatus.isWorking && (
+                  <button type="button" onClick={() => updateDayStatus(false, 'Повітряна тривога в Бородянській громаді')} className="cancel-action" style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px' }}>
+                    <Siren size={14} /> Оголосити тривогу
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 300px' }}>
+                  <input type="text" placeholder="Причина зупинки" value={statusReasonInput} onChange={(e) => setStatusReasonInput(e.target.value)} style={{ width: '100%', marginBottom: 0 }} />
+                </div>
+                {dayStatus.isWorking ? (
+                  <button className="cancel-action" onClick={() => updateDayStatus(false)} disabled={statusLoading}>Зупинити прийом</button>
+                ) : (
+                  <button className="primary" onClick={() => updateDayStatus(true)} disabled={statusLoading}>Відновити прийом (Відбій)</button>
+                )}
+              </div>
+            </div>
+
+            <div className="staff-filter-bar">
+              <div className="search-box">
+                <Search size={16} className="search-icon" />
+                <input type="text" placeholder="Пошук за ПІБ, телефоном або номером..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                {searchQuery && <button className="clear-search" onClick={() => setSearchQuery('')}>×</button>}
+              </div>
+              <div className="filter-chips">
+                <button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>Усі ({stats.total})</button>
+                <button className={statusFilter === 'waiting' ? 'active' : ''} onClick={() => setStatusFilter('waiting')}>Очікують ({stats.waiting})</button>
+                <button className={statusFilter === 'serving' ? 'active' : ''} onClick={() => setStatusFilter('serving')}>На прийомі ({stats.serving})</button>
+                <button className={statusFilter === 'completed' ? 'active' : ''} onClick={() => setStatusFilter('completed')}>Завершені ({stats.completed})</button>
+                <button className={statusFilter === 'cancelled' ? 'active' : ''} onClick={() => setStatusFilter('cancelled')}>Скасовані ({stats.cancelled})</button>
+              </div>
+            </div>
+
+            {error && <div className="alert error">{error}</div>}
+            {message && <div className="alert success">{message}</div>}
+            
+            {staffLoading ? (
+              <div className="empty">Завантаження черги…</div>
+            ) : displayedStaffQueue.length === 0 ? (
+              <div className="empty"><Users size={26} /><p>На цю дату немає записів.</p></div>
+            ) : (
+              <div className="staff-list">
+                {displayedStaffQueue.map(item => (
+                  <article className="staff-row" key={item.id}>
+                    <div className="staff-details">
+                      <div className="staff-title">
+                        <b>№ {item.queue_number} · {item.full_name}</b>
+                        <span className={`status ${item.status}`}>{STATUS_LABELS[item.status] || item.status}</span>
+                      </div>
+                      <p><strong>{item.service}</strong> · Час: {String(item.appointment_time || '').slice(0, 5)}</p>
+                      <p>Телефон: <a href={`tel:${item.phone}`}>{item.phone}</a></p>
+                      {item.notes && <p>Коментар: {item.notes}</p>}
+                      <small>Створено: {new Date(item.created_at).toLocaleString('uk-UA')}</small>
+                    </div>
+                    <div className="actions">
+                      <button disabled={item.status !== 'waiting'} onClick={() => staffAction(item.id, 'call')}>Викликати</button>
+                      <button disabled={item.status !== 'serving'} onClick={() => staffAction(item.id, 'complete')}>Завершити</button>
+                      <button className="cancel-action" disabled={['completed', 'cancelled'].includes(item.status)} onClick={() => staffAction(item.id, 'cancel')}>Скасувати</button>
+                      {['completed', 'cancelled'].includes(item.status) && (
+                        <button style={{ background: '#dcfce7', color: '#15803d' }} onClick={() => staffAction(item.id, 'restore')}>
+                          <RotateCcw size={13} style={{ verticalAlign: 'middle', marginRight: '3px' }} /> Відновити
+                        </button>
+                      )}
+                      <button className="cancel-action" style={{ background: '#fee2e2', color: '#dc2626' }} onClick={() => deleteAppointment(item.id)}>
+                        <Trash2 size={13} style={{ verticalAlign: 'middle', marginRight: '3px' }} /> Видалити
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  // ЗВИЧАЙНИЙ ПУБЛІЧНИЙ ВИГЛЯД САЙТУ
   return (
     <div className="page">
       <header className="header">
@@ -524,7 +722,6 @@ export default function App() {
       )}
 
       <main>
-        {/* ШАПКА З ВІДЖЕТОМ ТРИВОГИ */}
         <section className="hero">
           <div className="hero-text">
             <div className="hero-kicker">ЗРУЧНО · ПРОЗОРО · У ЗРУЧНИЙ ЧАС</div>
@@ -554,7 +751,7 @@ export default function App() {
           </div>
         </section>
 
-        {/* НАВІГАЦІЯ */}
+        {/* НАВІГАЦІЯ БЕЗ КАБІНЕТУ ПРАЦІВНИКА */}
         <nav className="tabs" aria-label="Розділи">
           <button className={tab === 'book' ? 'selected' : ''} onClick={() => { setTab('book'); setError(''); }}>
             Записатися
@@ -568,12 +765,6 @@ export default function App() {
           <button className={tab === 'queue' ? 'selected' : ''} onClick={() => { setTab('queue'); setError(''); loadPublicQueue(); }}>
             Публічна черга
           </button>
-          
-          {isStaff && (
-            <button className={tab === 'staff' ? 'selected' : ''} onClick={() => { setTab('staff'); setError(''); }}>
-              Кабінет працівника
-            </button>
-          )}
         </nav>
 
         {/* 1. ЗАПИС НА ПРИЙОМ */}
@@ -681,12 +872,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* КНОПКА ШВИДКОГО ВХОДУ GOOGLE */}
-                <button 
-                  type="button" 
-                  className="google-auth-btn"
-                  onClick={handleGoogleLogin}
-                >
+                <button type="button" className="google-auth-btn" onClick={handleGoogleLogin}>
                   <svg width="20" height="20" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -740,9 +926,7 @@ export default function App() {
               <div className="user-dashboard">
                 <div className="staff-tools" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
                   <div className="staff-profile-card">
-                    <div className="staff-avatar">
-                      <UserCheck size={22} />
-                    </div>
+                    <div className="staff-avatar"><UserCheck size={22} /></div>
                     <div className="staff-info">
                       <div className="staff-name">{session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email}</div>
                       <div className="staff-role">{session.user.user_metadata?.phone || session.user.email}</div>
@@ -750,12 +934,8 @@ export default function App() {
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="icon-button" onClick={loadUserAppointments}>
-                      <RefreshCw size={15} /> Оновити
-                    </button>
-                    <button className="quiet-button" onClick={handleSignOut}>
-                      <LogOut size={15} /> Вийти
-                    </button>
+                    <button className="icon-button" onClick={loadUserAppointments}><RefreshCw size={15} /> Оновити</button>
+                    <button className="quiet-button" onClick={handleSignOut}><LogOut size={15} /> Вийти</button>
                   </div>
                 </div>
 
@@ -778,27 +958,14 @@ export default function App() {
                     </div>
 
                     <div className="ticket-meta-grid">
-                      <div>
-                        <label>Дата прийому</label>
-                        <span>{formatDate(activeUserTicket.visit_date)}</span>
-                      </div>
-                      <div>
-                        <label>Час візиту</label>
-                        <span>{activeUserTicket.appointment_time?.slice(0, 5) || '—'}</span>
-                      </div>
-                      <div className="full-width">
-                        <label>Послуга</label>
-                        <span>{activeUserTicket.service}</span>
-                      </div>
+                      <div><label>Дата прийому</label><span>{formatDate(activeUserTicket.visit_date)}</span></div>
+                      <div><label>Час візиту</label><span>{activeUserTicket.appointment_time?.slice(0, 5) || '—'}</span></div>
+                      <div className="full-width"><label>Послуга</label><span>{activeUserTicket.service}</span></div>
                     </div>
 
                     <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '15px' }}>
-                      <button className="icon-button" onClick={() => window.print()}>
-                        <Printer size={15} /> Друк талона
-                      </button>
-                      <button className="cancel-action" onClick={() => cancelUserAppointment(activeUserTicket.id)}>
-                        <XCircle size={15} /> Скасувати запис
-                      </button>
+                      <button className="icon-button" onClick={() => window.print()}><Printer size={15} /> Друк талона</button>
+                      <button className="cancel-action" onClick={() => cancelUserAppointment(activeUserTicket.id)}><XCircle size={15} /> Скасувати запис</button>
                     </div>
                   </div>
                 ) : (
@@ -842,7 +1009,7 @@ export default function App() {
             <label className="date-field">Дата<input type="date" value={visitDate} onChange={e => { setVisitDate(e.target.value); loadPublicQueue(e.target.value); }} /></label>
             <div className="queue-list">
               {filteredQueue.length === 0 ? (
-                <div className="empty"><ListOrdered size={27} /><p>На цю дату записів не знайдено.</p><small>Нова інформація автоматично оновлюється кожні 20 секунд.</small></div>
+                <div className="empty"><ListOrdered size={27} /><p>На цю дату записів не знайдено.</p><small>Оновлюється автоматично кожні 20 секунд.</small></div>
               ) : (
                 filteredQueue.map(item => (
                   <div className="queue-row" key={`${item.visit_date}-${item.queue_number}`}>
@@ -853,195 +1020,6 @@ export default function App() {
                 ))
               )}
             </div>
-          </section>
-        )}
-
-        {/* 4. КАБІНЕТ ПРАЦІВНИКА */}
-        {tab === 'staff' && isStaff && (
-          <section className="panel">
-            <div className="section-head">
-              <div className="symbol"><ShieldCheck /></div>
-              <div><h3>Кабінет працівника</h3><p>Керування чергою та прийомом громадян</p></div>
-            </div>
-            
-            <div className="staff-tools" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' }}>
-              <div className="staff-profile-card">
-                <div className="staff-avatar">
-                  {staffProfile.name ? staffProfile.name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase() : 'ЯО'}
-                </div>
-                <div className="staff-info">
-                  <div className="staff-name">{staffProfile.name}</div>
-                  <div className="staff-role">
-                    <span className="staff-status-dot"></span>
-                    {staffProfile.role}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <label style={{ margin: 0, minWidth: '150px' }}>
-                  <input 
-                    type="date" 
-                    value={staffDate} 
-                    onChange={e => { setStaffDate(e.target.value); loadStaffQueue(e.target.value); loadDayStatus(e.target.value); }} 
-                    style={{ padding: '8px 12px' }}
-                  />
-                </label>
-                <button className="icon-button" onClick={() => { loadStaffQueue(staffDate); loadDayStatus(staffDate); }} aria-label="Оновити список">
-                  <RefreshCw size={15} /> Оновити
-                </button>
-                <button className="icon-button" onClick={exportToCSV} aria-label="Експорт в Excel" title="Завантажити звіт дня у CSV (Excel)">
-                  <Download size={15} /> Експорт (Excel)
-                </button>
-                <button className="quiet-button" onClick={handleSignOut} aria-label="Вийти з кабінету">
-                  <LogOut size={15} /> Вийти
-                </button>
-              </div>
-            </div>
-
-            <div className="staff-stats-grid">
-              <div className="stat-card">
-                <span className="stat-label">Усього талонів</span>
-                <strong className="stat-value">{stats.total}</strong>
-              </div>
-              <div className="stat-card stat-waiting">
-                <span className="stat-label">Очікують прийому</span>
-                <strong className="stat-value">{stats.waiting}</strong>
-              </div>
-              <div className="stat-card stat-serving">
-                <span className="stat-label">Зараз на прийомі</span>
-                <strong className="stat-value">{stats.serving}</strong>
-              </div>
-              <div className="stat-card stat-completed">
-                <span className="stat-label">Обслуговано</span>
-                <strong className="stat-value">{stats.completed}</strong>
-              </div>
-            </div>
-
-            <div style={{ background: '#f8fafc', padding: '1.25rem', border: '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                <h4 style={{ margin: 0, color: '#334155' }}>
-                  Статус прийому на {formatDate(staffDate)}
-                </h4>
-                {dayStatus.isWorking && (
-                  <button 
-                    type="button" 
-                    onClick={() => updateDayStatus(false, 'Повітряна тривога в Бородянській громаді')}
-                    className="cancel-action"
-                    style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px' }}
-                  >
-                    <Siren size={14} /> Оголосити тривогу (зупинити прийом)
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 300px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Вкажіть причину зупинки (напр., Повітряна тривога або Технічні роботи)" 
-                    value={statusReasonInput} 
-                    onChange={(e) => setStatusReasonInput(e.target.value)} 
-                    style={{ width: '100%', marginBottom: 0 }}
-                  />
-                </div>
-                {dayStatus.isWorking ? (
-                  <button className="cancel-action" onClick={() => updateDayStatus(false)} disabled={statusLoading}>
-                    Зупинити прийом
-                  </button>
-                ) : (
-                  <button className="primary" onClick={() => updateDayStatus(true)} disabled={statusLoading}>
-                    Відновити прийом (Відбій)
-                  </button>
-                )}
-              </div>
-              {!dayStatus.isWorking && (
-                <div style={{ marginTop: '0.75rem', color: '#b91c1c', fontSize: '0.9rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <AlertTriangle size={16} /> Прийом зупинено ({dayStatus.reason}).
-                </div>
-              )}
-            </div>
-
-            <div className="staff-filter-bar">
-              <div className="search-box">
-                <Search size={16} className="search-icon" />
-                <input 
-                  type="text"
-                  placeholder="Швидкий пошук за ПІБ, телефоном або номером..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                {searchQuery && (
-                  <button className="clear-search" onClick={() => setSearchQuery('')}>×</button>
-                )}
-              </div>
-
-              <div className="filter-chips">
-                <button className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>
-                  Усі ({stats.total})
-                </button>
-                <button className={statusFilter === 'waiting' ? 'active' : ''} onClick={() => setStatusFilter('waiting')}>
-                  Очікують ({stats.waiting})
-                </button>
-                <button className={statusFilter === 'serving' ? 'active' : ''} onClick={() => setStatusFilter('serving')}>
-                  На прийомі ({stats.serving})
-                </button>
-                <button className={statusFilter === 'completed' ? 'active' : ''} onClick={() => setStatusFilter('completed')}>
-                  Завершені ({stats.completed})
-                </button>
-                <button className={statusFilter === 'cancelled' ? 'active' : ''} onClick={() => setStatusFilter('cancelled')}>
-                  Скасовані ({stats.cancelled})
-                </button>
-              </div>
-            </div>
-
-            {error && <div className="alert error">{error}</div>}
-            {message && <div className="alert success">{message}</div>}
-            
-            {staffLoading ? (
-              <div className="empty">Завантаження черги…</div>
-            ) : displayedStaffQueue.length === 0 ? (
-              <div className="empty">
-                <Users size={26} />
-                <p>{searchQuery || statusFilter !== 'all' ? 'За обраними фільтрами записів не знайдено.' : 'На цю дату немає записів.'}</p>
-              </div>
-            ) : (
-              <div className="staff-list">
-                {displayedStaffQueue.map(item => (
-                  <article className="staff-row" key={item.id}>
-                    <div className="staff-details">
-                      <div className="staff-title">
-                        <b>№ {item.queue_number} · {item.full_name}</b>
-                        <span className={`status ${item.status}`}>{STATUS_LABELS[item.status] || item.status}</span>
-                      </div>
-                      <p><strong>{item.service}</strong> · Час: {String(item.appointment_time || '').slice(0, 5)}</p>
-                      <p>Телефон: <a href={`tel:${item.phone}`}>{item.phone}</a></p>
-                      {item.notes && <p>Коментар: {item.notes}</p>}
-                      <small>Створено: {new Date(item.created_at).toLocaleString('uk-UA')}</small>
-                    </div>
-                    <div className="actions">
-                      <button disabled={item.status !== 'waiting'} onClick={() => staffAction(item.id, 'call')}>Викликати</button>
-                      <button disabled={item.status !== 'serving'} onClick={() => staffAction(item.id, 'complete')}>Завершити</button>
-                      <button className="cancel-action" disabled={['completed', 'cancelled'].includes(item.status)} onClick={() => staffAction(item.id, 'cancel')}>Скасувати</button>
-                      
-                      {['completed', 'cancelled'].includes(item.status) && (
-                        <button 
-                          style={{ background: '#dcfce7', color: '#15803d' }} 
-                          onClick={() => staffAction(item.id, 'restore')} 
-                          title="Повернути запис у чергу очікування"
-                        >
-                          <RotateCcw size={13} style={{ verticalAlign: 'middle', marginRight: '3px' }} /> Відновити
-                        </button>
-                      )}
-
-                      <button className="cancel-action" style={{ background: '#fee2e2', color: '#dc2626' }} onClick={() => deleteAppointment(item.id)} title="Безповоротно видалити з бази">
-                        <Trash2 size={13} style={{ verticalAlign: 'middle', marginRight: '3px' }} /> Видалити
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
           </section>
         )}
 
